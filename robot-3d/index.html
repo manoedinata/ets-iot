@@ -121,7 +121,7 @@ input[type=range] { width: 100%; accent-color: var(--amber); }
 <div class="app">
   <header class="top">
     <h1>LPG Inspection Robot</h1>
-    <p class="sub">Interactive 3D prototype · ESP32-CAM · mecanum inverse kinematics</p>
+    <p class="sub">Interactive 3D prototype · ESP32-DevKit + ESP32-CAM · mecanum inverse kinematics</p>
   </header>
 
   <main class="layout">
@@ -335,8 +335,10 @@ input[type=range] { width: 100%; accent-color: var(--amber); }
   var V = function (x, y, z) { return new THREE.Vector3(x, y, z); };
 
   def('frame', 'Frame', '', 'frame', '');
+  def('devkit', 'ESP32-DevKit', '×1', 'proposal',
+    'Main controller. Runs the FSM and the inverse kinematics, drives the PWM, reads the MQ-6, ultrasonic and encoder lines, and talks MQTT with the phone. Read the MQ-6 on ADC1 pins only, because ADC2 cannot be used while Wi-Fi is on. Level-shift the 5 V sensor lines.');
   def('esp32cam', 'ESP32-CAM', '×1', 'proposal',
-    'Main controller and OV2640 camera. Publishes telemetry, receives velocity commands over MQTT, runs the inverse kinematics and drives the PWM. Very few GPIO are free and ADC2 cannot be used while Wi-Fi is on, so four motors plus four sensors need an I2C expander or a second MCU.');
+    'Camera and video streamer (OV2640). Serves an MJPEG stream over HTTP to the phone and runs the tank colour detection. Motors and sensors moved to the DevKit because the CAM has too few free GPIO. Video does not go through MQTT.');
   def('wheel', 'Gear motor + mecanum wheel', '×4', 'proposal',
     'Rollers sit at 45° to the axle. FL and RR use one roller handedness, FR and RL the opposite, which makes an X pattern and allows strafing. Each wheel runs from a PWM channel on the motor drivers.');
   def('mq6', 'MQ-6 gas sensor', '×2', 'proposal',
@@ -351,8 +353,8 @@ input[type=range] { width: 100%; accent-color: var(--amber); }
     'Feeds the ESP32-CAM and the MQ-6 heaters from the pack.');
   def('imu', 'IMU (MPU6050)', '×1', 'suggested',
     'Heading for odometry. Mecanum wheels slip, so encoders alone drift and the heatmap position becomes unreliable.');
-  def('encoder', 'Wheel encoder', '×4', 'suggested',
-    'Needed for the odometry behind the heatmap. Not in the current slides.');
+  def('encoder', 'Rotary encoder', '×4', 'proposal',
+    'One per motor, for the wheel odometry behind the heatmap. Mecanum wheels still slip, so an IMU is suggested for heading.');
   def('buzzer', 'Buzzer + beacon', '×1', 'suggested',
     'Local alarm when the ALERT state fires, so a person nearby knows without looking at the phone.');
 
@@ -455,6 +457,13 @@ input[type=range] { width: 100%; accent-color: var(--amber); }
   imu.add(box(0.21, 0.03, 0.16, M(0x7a3fb0, { roughness: 0.5 }), 0, 0, 0));
   imu.add(box(0.05, 0.015, 0.05, M(0x15181b), 0, 0.022, 0));
   imu.position.set(0.1, 1.32, -0.35); place(imu, V(0, 2.9, 0), 'imu'); anchor('imu', imu, 0.3);
+
+  var dk = new THREE.Group();
+  dk.add(box(0.51, 0.03, 0.28, M(0x15181b, { roughness: 0.5 }), 0, 0, 0));
+  dk.add(box(0.18, 0.03, 0.16, M(0xa7adb2, { metalness: 0.8, roughness: 0.3 }), 0.12, 0.03, 0));
+  dk.add(box(0.07, 0.035, 0.09, M(0xc8ced3, { metalness: 0.8, roughness: 0.3 }), -0.23, 0.03, 0));
+  [-1, 1].forEach(function (s) { dk.add(box(0.44, 0.04, 0.02, M(0x0b0d0f), 0, 0.03, s * 0.125)); });
+  dk.position.set(0.0, 1.33, 0.38); place(dk, V(0, 3.5, 0), 'devkit'); anchor('devkit', dk, 0.3);
 
   var bz = new THREE.Group();
   bz.add(cyl(0.1, 0.1, 0.1, M(0x15181b), 0, 0, 0, null, 20));
@@ -775,7 +784,8 @@ input[type=range] { width: 100%; accent-color: var(--amber); }
     if (mqT >= 0.5) {
       mqT = 0;
       $('mqtt').innerHTML = '<b>robot/cmd/vel</b>  ' + JSON.stringify({ vx: +(st.vx / MAXV).toFixed(2), vy: +(st.vy / MAXV).toFixed(2), w: +(st.w / MAXW).toFixed(2) }) +
-        '\n<b>robot/telemetry</b>  ' + JSON.stringify({ state: s, gasL: Math.round(sn.gL * 4000), gasR: Math.round(sn.gR * 4000), usL: Math.round(sn.usL * 10), usR: Math.round(sn.usR * 10) });
+        '\n<b>robot/telemetry</b>  ' + JSON.stringify({ state: s, gasL: Math.round(sn.gL * 4000), gasR: Math.round(sn.gR * 4000), usL: Math.round(sn.usL * 10), usR: Math.round(sn.usR * 10) }) +
+        '\n<b>http://robot-cam:81/stream</b>  MJPEG video, not MQTT';
     }
   }
 
